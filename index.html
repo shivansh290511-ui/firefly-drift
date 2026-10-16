@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Firefly Drift</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f2a2e">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#0f2a2e;--ink:#e8f5ec;--amber:#ffc857;--moss:#2f6b4f;--coral:#ff7a6b;--panel:rgba(8,24,27,.88);--btn-ink:#10262a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0f2a2e;--ink:#e8f5ec;--panel:rgba(8,24,27,.88)}}
+:root[data-theme="dark"]{--bg:#0f2a2e;--ink:#e8f5ec}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none;
+font-family:"Avenir Next","Trebuchet MS",system-ui,sans-serif}
+#wrap{position:relative;height:100%;max-width:520px;margin:0 auto}
+canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;top:14px;left:0;right:0;text-align:center;font-size:48px;font-weight:700;color:var(--amber);pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.4)}
+#hint{position:absolute;bottom:90px;left:0;right:0;text-align:center;font-size:16px;opacity:.8;pointer-events:none}
+.ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px;background:var(--panel)}
+.ov[hidden]{display:none}
+h1{margin:0;font-size:40px;letter-spacing:.5px;color:var(--amber)}
+p{margin:0;max-width:30ch;line-height:1.45}
+.big{font-size:56px;font-weight:700}
+.btn{font:inherit;font-size:18px;font-weight:700;border:0;border-radius:999px;padding:14px 32px;min-width:230px;background:var(--amber);color:var(--btn-ink);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border:2px solid var(--moss)}
+.btn:disabled{opacity:.4}
+.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.tag{font-size:13px;opacity:.7}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="hud">0</div>
+  <div id="hint" hidden>Tap to fly</div>
+
+  <div class="ov" id="menu">
+    <h1>Firefly Drift</h1>
+    <p>Tap to flap. Slip through the gaps between the reeds.</p>
+    <button class="btn" id="start">Start</button>
+  </div>
+
+  <div class="ov" id="over" hidden>
+    <h1 style="color:var(--coral)">Landed</h1>
+    <div class="big" id="fs">0</div>
+    <p id="fb">Best 0</p>
+    <button class="btn" id="again">Play again</button>
+  </div>
+</div>
+
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+const LH=640,GROUND=60,GAP=158,PW=56,SPACING=210,SPD=120,G=1500,FLAP=430;
+let LW=360,sc=1,dpr=1,state='menu',t=0,score=0,best=0,usedContinue=false,wing=0;
+const b={x:80,y:LH/2,vy:0,r:12};
+let pipes=[];
+const stars=Array.from({length:45},()=>({x:Math.random(),y:Math.random()*.6,s:Math.random()*1.6+.4}));
+try{best=+localStorage.getItem('fd-best')||0}catch(e){}
+
+function resize(){
+  const r=cv.parentNode.getBoundingClientRect();
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=r.width*dpr;cv.height=r.height*dpr;
+  sc=r.height/LH;LW=r.width/sc;
+}
+addEventListener('resize',resize);resize();
+
+function show(id,on){$(id).hidden=!on}
+function resetRun(keepScore){
+  b.y=LH/2;b.vy=0;pipes=[];
+  if(!keepScore){score=0;usedContinue=false}
+  $('hud').textContent=score;
+  state='ready';show('hint',true);
+  ['menu','over'].forEach(i=>show(i,false));
+}
+function flap(){
+  if(state==='ready'){state='play';show('hint',false)}
+  if(state==='play'){b.vy=-FLAP;wing=1}
+}
+function gameOver(){
+  state='over';
+  if(score>best){best=score;try{localStorage.setItem('fd-best',best)}catch(e){}}
+  $('fs').textContent=score;$('fb').textContent='Best '+best;
+  show('over',true);show('hint',false);
+}
+
+cv.addEventListener('pointerdown',e=>{e.preventDefault();flap()});
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();flap()}});
+$('start').onclick=()=>resetRun(false);
+$('again').onclick=()=>resetRun(false);
+
+function step(dt){
+  t+=dt;wing=Math.max(0,wing-dt*5);
+  if(state==='ready'){b.y=LH/2+Math.sin(t*4)*6;return}
+  if(state!=='play')return;
+  b.vy+=G*dt;b.y+=b.vy*dt;
+  if(b.y<b.r){b.y=b.r;b.vy=0}
+  pipes.forEach(p=>p.x-=SPD*dt);
+  if(!pipes.length||pipes[pipes.length-1].x<LW-SPACING){
+    pipes.push({x:LW+10,gy:70+Math.random()*(LH-GROUND-GAP-140),done:false});
+  }
+  pipes=pipes.filter(p=>p.x>-PW-10);
+  for(const p of pipes){
+    if(!p.done&&p.x+PW<b.x){p.done=true;score++;$('hud').textContent=score}
+    if(b.x+b.r>p.x&&b.x-b.r<p.x+PW&&(b.y-b.r<p.gy||b.y+b.r>p.gy+GAP)){return gameOver()}
+  }
+  if(b.y+b.r>LH-GROUND)gameOver();
+}
+
+function reed(x,y,h,up){
+  const g=ctx.createLinearGradient(x,0,x+PW,0);
+  g.addColorStop(0,'#2a5f46');g.addColorStop(.5,'#3e8a63');g.addColorStop(1,'#2a5f46');
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  const r=14;
+  if(up){ctx.roundRect(x,y,PW,h,[r,r,0,0])}else{ctx.roundRect(x,y,PW,h,[0,0,r,r])}
+  ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.12)';
+  for(let i=1;i<5;i++){const yy=up?y+i*h/5:y+h-i*h/5;ctx.fillRect(x,yy,PW,2)}
+}
+
+function draw(){
+  ctx.setTransform(dpr*sc,0,0,dpr*sc,0,0);
+  const bg=ctx.createLinearGradient(0,0,0,LH);
+  bg.addColorStop(0,'#0a1d24');bg.addColorStop(1,'#16413f');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,LW,LH);
+  ctx.fillStyle='#e8f5ec';
+  stars.forEach(s=>{ctx.globalAlpha=.4+.4*Math.sin(t*2+s.x*20);ctx.beginPath();ctx.arc(s.x*LW,s.y*LH,s.s,0,7);ctx.fill()});
+  ctx.globalAlpha=1;
+  pipes.forEach(p=>{reed(p.x,-20,p.gy+20,false);reed(p.x,p.gy+GAP,LH-GROUND-p.gy-GAP,true)});
+  ctx.fillStyle='#0b2a26';ctx.fillRect(0,LH-GROUND,LW,GROUND);
+  ctx.fillStyle='#1d5a46';ctx.fillRect(0,LH-GROUND,LW,6);
+  // firefly
+  ctx.save();ctx.translate(b.x,b.y);ctx.rotate(Math.max(-.5,Math.min(.8,b.vy/700)));
+  const gl=ctx.createRadialGradient(0,0,2,0,0,46);
+  gl.addColorStop(0,'rgba(255,200,87,.85)');gl.addColorStop(1,'rgba(255,200,87,0)');
+  ctx.fillStyle=gl;ctx.beginPath();ctx.arc(0,0,46,0,7);ctx.fill();
+  ctx.fillStyle='rgba(232,245,236,.75)';
+  ctx.beginPath();ctx.ellipse(-3,-8,11,5+wing*6,-.5,0,7);ctx.fill();
+  ctx.fillStyle='#ffc857';ctx.beginPath();ctx.arc(0,0,b.r,0,7);ctx.fill();
+  ctx.fillStyle='#10262a';ctx.beginPath();ctx.arc(5,-3,2.2,0,7);ctx.fill();
+  ctx.restore();
+}
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min((now-last)/1000,.033);last=now;
+  step(dt);draw();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+if('serviceWorker' in navigator){addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
+</script>
+</body>
+</html>
